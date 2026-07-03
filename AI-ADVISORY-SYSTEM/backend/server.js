@@ -11,86 +11,95 @@ import connectDB from './config/db.js';
 import apiRoutes from './routes/api.js';
 import User from './models/User.js';
 
-// Load env vars
 dotenv.config();
 
-// Connect to database
+// Connect Database
 connectDB();
 
 const app = express();
 
-// Security policies
+// Paths
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Security
 app.use(helmet({
-  crossOriginResourcePolicy: false // Required to access uploaded static images from frontend
+  crossOriginResourcePolicy: false
 }));
+
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+  origin: true,
   credentials: true
 }));
 
-// Rate limiting
+// Rate Limit
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 mins
-  max: 200, // Limit each IP to 200 requests per window
-  message: { success: false, message: 'Too many requests, please try again later.' }
+  windowMs: 15 * 60 * 1000,
+  max: 200
 });
-app.use('/api/', limiter);
 
-// Body parser
+app.use('/api', limiter);
+
+// Body Parser
 app.use(express.json());
 
-// Setup uploads path serving
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Uploads
 const uploadDir = path.join(__dirname, 'uploads');
+
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
+
 app.use('/uploads', express.static(uploadDir));
 
-// Mount Routes
+// API Routes
 app.use('/api', apiRoutes);
 
-// Base route test
-app.get('/', (req, res) => {
-  res.send('HarvestIQ API is running successfully.');
+// ==========================
+// SERVE REACT FRONTEND
+// ==========================
+
+const frontendPath = path.join(__dirname, '../frontend/dist');
+
+app.use(express.static(frontendPath));
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
-// Create default admin user on start if not exists
+// ==========================
+// Seed Admin
+// ==========================
+
 const seedAdminUser = async () => {
   try {
     const adminEmail = 'admin@harvestiq.com';
-    const adminExists = await User.findOne({ email: adminEmail });
+
+    const adminExists = await User.findOne({
+      email: adminEmail
+    });
+
     if (!adminExists) {
       await User.create({
         name: 'System Admin',
         email: adminEmail,
         mobile: '9999999999',
-        password: 'admin123', // Encrypted inside Mongoose model pre-save hook
-        role: 'admin',
+        password: 'admin123',
+        role: 'admin'
       });
-      console.log('--- DEFAULT ADMIN USER SEEDED ---');
-      console.log(`Email: ${adminEmail}`);
-      console.log('Password: admin123');
-      console.log('---------------------------------');
+
+      console.log('Default admin created');
     }
-  } catch (error) {
-    console.error('Error seeding admin user:', error.message);
+  } catch (err) {
+    console.log(err.message);
   }
 };
 
-// Start seeding verification
 seedAdminUser();
 
+// Start Server
 const PORT = process.env.PORT || 5000;
 
-const server = app.listen(PORT, () => {
-  console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
-});
-
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err, promise) => {
-  console.error(`Unhandled Promise Rejection: ${err.message}`);
-  // Close server & exit process
-  // server.close(() => process.exit(1));
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
